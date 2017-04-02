@@ -148,12 +148,22 @@ struct vec4 {
 		return vec4(v[0] + v2.v[0], v[1] + v2.v[1], v[2] + v2.v[2]);
 	}
 
+	vec4 operator-(vec4& v2) {
+		return vec4(v[0] - v2.v[0], v[1] - v2.v[1], v[2] - v2.v[2]);
+	}
+
 	vec4 operator/(float f) {
 		return (*this)*(1/f);
 	}
 
+	// cross
 	vec4 operator%(vec4& v2) {
 		return vec4(v[1] * v2.v[2] - v[2] * v2.v[1], v[2] * v2.v[0] - v[0] * v2.v[2], v[0] * v2.v[1] - v[1] * v2.v[0]);
+	}
+
+	// dot 
+	float operator*(vec4& v2) {
+		return v[0] * v2.v[0] + v[1] * v2.v[1] + v[2] * v2.v[2];
 	}
 
 	float length() {
@@ -209,6 +219,8 @@ public:
 	}
 };
 
+vec4 lightDir(-1,1,-1);
+
 class Ray {
 	vec4 position;
 	vec4 orientation;
@@ -229,13 +241,19 @@ class Collision {
 	vec4 normal;
 	float t;
 public:
-	Collision(float t, vec4 position = vec4(), vec4 rayDirection = vec4(), vec4 normal = vec4())
+	Collision(float t, vec4 normal = vec4(), vec4 position = vec4(), vec4 rayDirection = vec4())
 		:t(t),position(position),rayDirection(rayDirection),normal(normal)
 	{}
 
 	vec4 getColor() {
-		if (t > 0)
-			return vec4(1, 1, 1);
+		if (t > 0) {
+			vec4 color = vec4(1, 0, 0);
+			float d = lightDir*normal;
+			float a = 0.1;
+			vec4 diffuse = (d > 0) ? color * d : vec4(0, 0, 0);
+			vec4 ambient = color * a;
+			return diffuse + ambient;
+		}
 		else
 			return vec4(0, 0, 0);
 	}
@@ -263,7 +281,7 @@ public:
 		float t = min(t1, t2);
 
 		if (t > 0)
-			return Collision(t);
+			return Collision(t, (ray.getPosition() + ray.getOrientation()*t - position).normalize());
 		else
 			return Collision(-1);
 	}
