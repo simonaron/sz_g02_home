@@ -133,6 +133,36 @@ struct vec4 {
 	vec4(float x = 0, float y = 0, float z = 0, float w = 1) {
 		v[0] = x; v[1] = y; v[2] = z; v[3] = w;
 	}
+
+	float& operator[](char c) {
+		if (c == 'x') return v[0];
+		if (c == 'y') return v[1];
+		if (c == 'z') return v[2];
+	}
+
+	vec4 operator*(float f) {
+		return vec4(v[0] * f, v[1] * f, v[2] * f);
+	}
+
+	vec4 operator+(vec4& v2) {
+		return vec4(v[0] + v2.v[0], v[1] + v2.v[1], v[2] + v2.v[2]);
+	}
+
+	vec4 operator/(float f) {
+		return (*this)*(1/f);
+	}
+
+	vec4 operator%(vec4& v2) {
+		return vec4(v[1] * v2.v[2] - v[2] * v2.v[1], v[2] * v2.v[0] - v[0] * v2.v[2], v[0] * v2.v[1] - v[1] * v2.v[0]);
+	}
+
+	float length() {
+		return sqrt(pow(v[0], 2) + pow(v[1], 2) + pow(v[2], 2));
+	}
+
+	vec4 normalize() {
+		return (*this) / (this->length());
+	}
 };
 
 
@@ -179,6 +209,68 @@ public:
 	}
 };
 
+class Ray {
+	vec4 position;
+	vec4 orientation;
+public:
+	Ray(vec4 position, vec4 orientation) :position(position), orientation(orientation) {}
+	vec4 getPosition() const {
+		return position;
+	}
+
+	vec4 getOrientation() const {
+		return orientation;
+	}
+};
+
+class Collision {
+	vec4 position;
+	vec4 rayDirection;
+	vec4 normal;
+	float t;
+public:
+	Collision(float t, vec4 position = vec4(), vec4 rayDirection = vec4(), vec4 normal = vec4())
+		:t(t),position(position),rayDirection(rayDirection),normal(normal)
+	{}
+
+	vec4 getColor() {
+		if (t > 0)
+			return vec4(1, 1, 1);
+		else
+			return vec4(0, 0, 0);
+	}
+};
+
+class Sphere {
+	vec4 position;
+	float r;
+public:
+	Sphere(vec4 position, float r):position(position),r(r){}
+	Collision intersect(Ray const& ray) {
+		float a = pow(ray.getOrientation()['x'], 2) + pow(ray.getOrientation()['y'], 2) + pow(ray.getOrientation()['z'], 2);
+		float b =
+			2 * (ray.getPosition()['x'] - position['x'])*ray.getOrientation()['x'] +
+			2 * (ray.getPosition()['y'] - position['y'])*ray.getOrientation()['y'] +
+			2 * (ray.getPosition()['z'] - position['z'])*ray.getOrientation()['z'];
+		float c =
+			pow(ray.getPosition()['x'] - position['x'], 2) +
+			pow(ray.getPosition()['y'] - position['y'], 2) +
+			pow(ray.getPosition()['z'] - position['z'], 2) -
+			pow(r, 2);
+
+		float t1 = (-b + sqrt(pow(b, 2) - 4 * a*c)) / (2 * a);
+		float t2 = (-b - sqrt(pow(b, 2) - 4 * a*c)) / (2 * a);
+		float t = min(t1, t2);
+
+		if (t > 0)
+			return Collision(t);
+		else
+			return Collision(-1);
+	}
+};
+
+Sphere* sphere;
+
 class Camera {
 	vec4 position;
 	vec4 lookAt;
@@ -195,12 +287,25 @@ public:
 		windowHeight = 600;
 		windowWidth = 600;
 		background = new vec3[windowHeight*windowWidth]();
+		position = vec4(0, 0, -500);
+		lookAt = vec4(0, 0, 1);
+		up = vec4(0, 1, 0);
+		angleVertical = angleHorizontal = 1.0;
 	}
 
 	void render() {
 		for (int x = 0; x < windowWidth; x++) {
 			for (int y = 0; y < windowHeight; y++) {
-				background[y * windowWidth + x] = vec3((float)x / windowWidth, (float)y / windowHeight, 0);
+				Ray ray(position,
+					(
+						lookAt + 
+						up%lookAt*(x - windowWidth / 2.0) / (windowWidth / 2.0) * tan(angleHorizontal/2) +
+						up*(y - windowHeight / 2.0) / (windowHeight / 2.0) * tan(angleVertical / 2)
+					).normalize()
+				);
+
+				vec4 color = sphere->intersect(ray).getColor();
+				background[y * windowWidth + x] = vec3(color['x'], color['y'], color['z']);
 			}
 		}
 		fullScreenTexturedQuad.Create(background);
@@ -257,6 +362,7 @@ void onInitialization() {
 	glUseProgram(shaderProgram);
 	
 	camera = new Camera();
+	sphere = new Sphere(vec4(0,0,0),100);
 	camera->render();
 }
 
