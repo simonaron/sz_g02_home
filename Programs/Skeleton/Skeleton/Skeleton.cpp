@@ -179,24 +179,44 @@ public:
 	}
 };
 
-// The virtual world: single quad
-FullScreenTexturedQuad fullScreenTexturedQuad;
+class Camera {
+	vec4 position;
+	vec4 lookAt;
+	vec4 up;
+	float angleVertical;
+	float angleHorizontal;
 
-vec3 background[windowWidth * windowHeight];	// The image, which stores the ray tracing result
+	size_t windowHeight, windowWidth;
+
+	FullScreenTexturedQuad fullScreenTexturedQuad;
+	vec3* background;
+public:
+	Camera() {
+		windowHeight = 600;
+		windowWidth = 600;
+		background = new vec3[windowHeight*windowWidth]();
+	}
+
+	void render() {
+		for (int x = 0; x < windowWidth; x++) {
+			for (int y = 0; y < windowHeight; y++) {
+				background[y * windowWidth + x] = vec3((float)x / windowWidth, (float)y / windowHeight, 0);
+			}
+		}
+		fullScreenTexturedQuad.Create(background);
+	}
+
+	void draw() {
+		fullScreenTexturedQuad.Draw();
+	}
+};
+
+Camera* camera;
 
 
 												// Initialization, create an OpenGL context
 void onInitialization() {
 	glViewport(0, 0, windowWidth, windowHeight);
-
-	// Ray tracing fills the image called background
-	for (int x = 0; x < windowWidth; x++) {
-		for (int y = 0; y < windowHeight; y++) {
-			background[y * windowWidth + x] = vec3((float)x / windowWidth, (float)y / windowHeight, 0);
-		}
-	}
-
-	fullScreenTexturedQuad.Create(background);
 
 	// Create vertex shader from string
 	unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
@@ -235,16 +255,20 @@ void onInitialization() {
 	checkLinking(shaderProgram);
 	// make this program run
 	glUseProgram(shaderProgram);
+	
+	camera = new Camera();
+	camera->render();
 }
 
 void onExit() {
 	glDeleteProgram(shaderProgram);
+	delete camera;
 	printf("exit");
 }
 
 // Window has become invalid: Redraw
 void onDisplay() {
-	fullScreenTexturedQuad.Draw();
+	camera->draw();
 	glutSwapBuffers();									// exchange the two buffers
 }
 
