@@ -9,6 +9,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <vector>
+#include <iostream>
 
 #if defined(__APPLE__)
 #include <GLUT/GLUT.h>
@@ -134,12 +136,6 @@ struct vec4 {
 		v[0] = x; v[1] = y; v[2] = z; v[3] = w;
 	}
 
-	float& operator[](char c) {
-		if (c == 'x') return v[0];
-		if (c == 'y') return v[1];
-		if (c == 'z') return v[2];
-	}
-
 	vec4 operator*(float f) {
 		return vec4(v[0] * f, v[1] * f, v[2] * f);
 	}
@@ -174,7 +170,6 @@ struct vec4 {
 		return (*this) / (this->length());
 	}
 };
-
 
 // handle of the shader program
 unsigned int shaderProgram;
@@ -219,124 +214,205 @@ public:
 	}
 };
 
-vec4 lightDir(-1,1,-1);
+struct Vector {
+	const float x, y, z;
+	Vector(const float& x, const float& y, const float& z, const float& w = 1)
+		:x(x/w), y(y/w), z(z/w) {}
 
-class Ray {
-	vec4 position;
-	vec4 orientation;
-public:
-	Ray(vec4 position, vec4 orientation) :position(position), orientation(orientation) {}
-	vec4 getPosition() const {
-		return position;
+	Vector(const vec4& vec):x(vec.v[0] / vec.v[3]), y(vec.v[1] / vec.v[3]), z(vec.v[2] / vec.v[3]) {}
+
+	const vec4 operator()() const {
+		return vec4(x, y, z, 1);
 	}
 
-	vec4 getOrientation() const {
-		return orientation;
+	const Vector operator+(const Vector& v2) const {
+		return Vector(x + v2.x, y + v2.y, z + v2.z);
 	}
-};
 
-class Collision {
-	vec4 position;
-	vec4 rayDirection;
-	vec4 normal;
-	float t;
-public:
-	Collision(float t, vec4 normal = vec4(), vec4 position = vec4(), vec4 rayDirection = vec4())
-		:t(t),position(position),rayDirection(rayDirection),normal(normal)
-	{}
+	const Vector operator-(const Vector& v2) const {
+		return Vector(x - v2.x, y - v2.y, z - v2.z);
+	}
 
-	vec4 getColor() {
-		if (t > 0) {
-			vec4 color = vec4(1, 0, 0);
-			float d = lightDir*normal;
-			float a = 0.1;
-			vec4 diffuse = (d > 0) ? color * d : vec4(0, 0, 0);
-			vec4 ambient = color * a;
-			return diffuse + ambient;
+	const Vector operator*(const float& f) const {
+		return Vector(x * f, y * f, z * f);
+	}
+
+	const Vector operator/(const float& f) const {
+		return Vector(x, y, z, f);
+	}
+
+	const Vector operator%(const Vector& v2) const {
+		return Vector(y*v2.z - z*v2.y, z*v2.x - x*v2.z, x*v2.y - y*v2.x);
+	}
+
+	const float operator*(const Vector& v2) const {
+		return x*v2.x + y*v2.y + z*v2.z;
+	}
+
+	const float length() const {
+		return sqrt(pow(x, 2) + pow(y, 2) + pow(z, 2));
+	}
+
+	const Vector normalize() const {
+		if (length()) {
+			return (*this) / length();
 		}
-		else
-			return vec4(0, 0, 0);
+		else {
+			return (*this);
+		}
 	}
 };
 
-class Sphere {
-	vec4 position;
-	float r;
+struct Material {
+	const vec3 color;
+	Material(const vec3 color):color(color) {}
+};
+
+struct Ray {
+	const Vector position;
+	const Vector orientation;
+
+	Ray(const Vector& position, const Vector& orientation)
+		:position(position), orientation(orientation.normalize()) {}
+};
+
+
+class Light {
+protected:
+	const vec3 color;
+
 public:
-	Sphere(vec4 position, float r):position(position),r(r){}
-	Collision intersect(Ray const& ray) {
-		float a = pow(ray.getOrientation()['x'], 2) + pow(ray.getOrientation()['y'], 2) + pow(ray.getOrientation()['z'], 2);
-		float b =
-			2 * (ray.getPosition()['x'] - position['x'])*ray.getOrientation()['x'] +
-			2 * (ray.getPosition()['y'] - position['y'])*ray.getOrientation()['y'] +
-			2 * (ray.getPosition()['z'] - position['z'])*ray.getOrientation()['z'];
-		float c =
-			pow(ray.getPosition()['x'] - position['x'], 2) +
-			pow(ray.getPosition()['y'] - position['y'], 2) +
-			pow(ray.getPosition()['z'] - position['z'], 2) -
-			pow(r, 2);
+	Light(const vec3& color) :color(color) {}
+	virtual const Vector getDirection(const Vector& to) const = 0;
+	virtual const float getIntensity(const Vector& to) const = 0;
+	virtual const vec3& getColor() const = 0;
+};
 
-		float t1 = (-b + sqrt(pow(b, 2) - 4 * a*c)) / (2 * a);
-		float t2 = (-b - sqrt(pow(b, 2) - 4 * a*c)) / (2 * a);
-		float t = min(t1, t2);
-
-		if (t > 0)
-			return Collision(t, (ray.getPosition() + ray.getOrientation()*t - position).normalize());
-		else
-			return Collision(-1);
+class LightPoint : public Light {
+	const Vector position;
+	const float range;
+public:
+	LightPoint(const Vector& position, const float& range = 300.0, const vec3& color = vec3(1, 1, 1))
+		:position(position), Light(color), range(range) {}
+	const Vector getDirection(const Vector& to) const {
+		return (position - to).normalize();
+	}
+	const float getIntensity(const Vector& to) const {
+		return (pow(range, 2) - pow((position - to).length(),2)) / pow(range, 2);
+	}
+	const vec3& getColor() const {
+		return color;
 	}
 };
 
-Sphere* sphere;
-
-class Camera {
-	vec4 position;
-	vec4 lookAt;
-	vec4 up;
-	float angleVertical;
-	float angleHorizontal;
-
-	size_t windowHeight, windowWidth;
-
-	FullScreenTexturedQuad fullScreenTexturedQuad;
-	vec3* background;
-public:
-	Camera() {
-		windowHeight = 600;
-		windowWidth = 600;
-		background = new vec3[windowHeight*windowWidth]();
-		position = vec4(0, 0, -500);
-		lookAt = vec4(0, 0, 1);
-		up = vec4(0, 1, 0);
-		angleVertical = angleHorizontal = 1.0;
+struct Hit {
+	const float t;
+	const Vector position;
+	const Vector normal;
+	const Material material;
+	Hit(const float& t, const Vector position = vec4(), const Vector normal = vec4(), const Material& material = Material(vec3(1,1,1)))
+		:position(position), normal(normal.normalize()), t(t), material(material) {}
+	/*Hit(const Hit& hit)
+		:position(hit.position), normal(hit.normal), t(hit.t) {}*/
+	const vec3 getColor(const std::vector<Light*>& lights) const {
+		if (t > 0) {
+			vec3 color(0,0,0);
+			for (std::vector<Light*>::const_iterator light = lights.begin(); light != lights.end(); light++) {
+				color = color + material.color
+					*((*light)->getColor())
+					*((*light)->getIntensity(position))
+					*max(cos((*light)->getDirection(position) * normal), 0.0);
+			}
+			return color;
+		}
+		else {
+			return vec3(0, 0, 0);
+		}
 	}
+};
 
-	void render() {
-		for (int x = 0; x < windowWidth; x++) {
-			for (int y = 0; y < windowHeight; y++) {
-				Ray ray(position,
-					(
-						lookAt + 
-						up%lookAt*(x - windowWidth / 2.0) / (windowWidth / 2.0) * tan(angleHorizontal/2) +
-						up*(y - windowHeight / 2.0) / (windowHeight / 2.0) * tan(angleVertical / 2)
-					).normalize()
-				);
+class Intersectable {
+protected:
+	const Material material;
+public:
+	Intersectable(const Material& material):material(material) {}
+	virtual const Hit intersect(const Ray& ray) const = 0;
+};
 
-				vec4 color = sphere->intersect(ray).getColor();
-				background[y * windowWidth + x] = vec3(color['x'], color['y'], color['z']);
+class Plain : public Intersectable {
+	const Vector aPoint;
+	const Vector normal;
+public:
+	Plain(const Vector& aPoint, const Vector& normal, const Material& material)
+		:aPoint(aPoint), normal(normal.normalize()), Intersectable(material){}
+
+	virtual const Hit intersect(const Ray& ray) const {
+		if (ray.orientation*normal != 0) {
+			const float t = ((aPoint - ray.position)*normal) / (ray.orientation*normal);
+			return Hit(t, ray.position + ray.orientation*t, normal, material);
+		}
+		else {
+			return Hit(-1);
+		}
+	}
+};
+
+struct Camera {
+	const Vector position;
+	const Vector ahead;
+	const Vector up;
+	const Vector right;
+	FullScreenTexturedQuad texturedQuad;
+	vec3* canvas;
+
+	Camera(const Vector& position, const Vector& ahead, const Vector& up,
+		const float& horizontalAngle, const float& verticalAngle)
+		:position(position), ahead(ahead.normalize()),
+		up(up.normalize()*tan(verticalAngle / 2)),
+		right((ahead%up).normalize()*tan(horizontalAngle / 2))
+	{
+		canvas = new vec3[windowHeight*windowWidth];
+	}
+	
+	void render(const std::vector<Intersectable*>& objects,const std::vector<Light*>& lights) {
+		for (size_t i = 0; i < windowHeight; i++) {
+			if(i%(windowHeight/10)==0)std::cout << (100.0*i)/(windowHeight) << "%" << std::endl;
+			for (size_t j = 0; j < windowWidth; j++) {
+				const Ray ray(position, ahead + up*(i - windowHeight / 2.0) / (windowHeight / 2.0) + right*(j - windowWidth / 2.0) / (windowWidth / 2.0));
+				std::vector<Hit> hits;
+				for (std::vector<Intersectable*>::const_iterator object = objects.begin(); object != objects.end(); object++) {
+					hits.push_back((*object)->intersect(ray));
+				}
+				const Hit bestHit = getBestHit(hits);
+				canvas[i*windowWidth + j] = bestHit.getColor(lights);
 			}
 		}
-		fullScreenTexturedQuad.Create(background);
+	}
+
+	const Hit& getBestHit(const std::vector<Hit>& hits) const {
+		const Hit* bestHit = &hits[0];
+		for (std::vector<Hit>::const_iterator hit = hits.begin(); hit != hits.end(); hit++) {
+			if ((*hit).t > 0 && (*hit).t > bestHit->t) {
+				bestHit = &(*hit);
+			}
+		}
+		return (*bestHit);
 	}
 
 	void draw() {
-		fullScreenTexturedQuad.Draw();
+		texturedQuad.Create(canvas);
+		texturedQuad.Draw();
+	} 
+
+	~Camera() {
+		delete[] canvas;
 	}
 };
 
+
 Camera* camera;
-
-
+std::vector<Intersectable*> objects;
+std::vector<Light*> lights;
 												// Initialization, create an OpenGL context
 void onInitialization() {
 	glViewport(0, 0, windowWidth, windowHeight);
@@ -378,15 +454,46 @@ void onInitialization() {
 	checkLinking(shaderProgram);
 	// make this program run
 	glUseProgram(shaderProgram);
-	
-	camera = new Camera();
-	sphere = new Sphere(vec4(0,0,0),100);
-	camera->render();
+
+	camera = new Camera(
+		Vector(0, 0, -300),
+		Vector(0, 0, 1),
+		Vector(0, 1, 0),
+		2, 2
+	);
+	objects.push_back(new Plain(
+		Vector(0, 0, 0),
+		Vector(0, 0, 1),
+		Material(vec3(1,0,0))
+	));
+	objects.push_back(new Plain(
+		Vector(0, 0, 0),
+		Vector(1, 0, 3),
+		Material(vec3(0, 1, 0))
+	));
+
+	objects.push_back(new Plain(
+		Vector(0, 300, 0),
+		Vector(0, -1, 4),
+		Material(vec3(0, 0, 1))
+	));
+	lights.push_back(new LightPoint(
+		Vector(-10, -200, -10),
+		400,
+		vec3(0.3, 1, 1)
+	));
+	lights.push_back(new LightPoint(
+		Vector(-50, -50, -50),
+		200,
+		vec3(1,1,1)
+	));
+	camera->render(objects, lights);
+	camera->draw();
 }
 
 void onExit() {
-	glDeleteProgram(shaderProgram);
 	delete camera;
+	glDeleteProgram(shaderProgram);
 	printf("exit");
 }
 
@@ -408,8 +515,7 @@ void onKeyboardUp(unsigned char key, int pX, int pY) {
 
 // Mouse click event
 void onMouse(int button, int state, int pX, int pY) {
-	if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {  // GLUT_LEFT_BUTTON / GLUT_RIGHT_BUTTON and GLUT_DOWN / GLUT_UP
-	}
+	
 }
 
 // Move mouse with key pressed
@@ -418,7 +524,7 @@ void onMouseMotion(int pX, int pY) {
 
 // Idle event indicating that some time elapsed: do animation here
 void onIdle() {
-	long time = glutGet(GLUT_ELAPSED_TIME); // elapsed time since the start of the program
+	
 }
 
 int main(int argc, char * argv[]) {
